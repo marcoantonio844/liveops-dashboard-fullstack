@@ -1,0 +1,19 @@
+Ficheiros do Python (Backend)
+
+/backend/venv/
+/backend/pycache/
+*.pyc
+
+Ficheiros do React (Frontend)
+
+/frontend/node_modules/
+/frontend/.vite/
+/frontend/dist/
+.DS_Store
+
+Ficheiros de Log
+
+.log
+npm-debug.log
+yarn-debug.log*
+yarn-error.log*
