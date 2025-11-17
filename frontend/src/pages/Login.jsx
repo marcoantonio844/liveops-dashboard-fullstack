@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../App.jsx'; 
 import { useNavigate } from 'react-router-dom';
 
-const API_URL = "http://127.0.0.1:8000";
+const API_URL = "https://liveops-dashboard-fullstack.onrender.com";
 
 function LoginPage() {
   const [isLogin, setIsLogin] = useState(true); 

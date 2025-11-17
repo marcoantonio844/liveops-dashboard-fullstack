@@ -303,8 +303,8 @@ function UserHistoryModal({ userId, open, onOpenChange, token, logout }) {
 
 // --- 6. COMPONENTE PRINCIPAL (DashboardPage) ---
 
-const WEBSOCKET_URL = "ws://localhost:8000/ws/live";
-const API_URL = "http://localhost:8000";
+const WEBSOCKET_URL = "wss://liveops-dashboard-fullstack.onrender.com/ws/live";
+const API_URL = "https://liveops-dashboard-fullstack.onrender.com";
 
 async function fetchWithToken(url, token, logout) {
   const response = await fetch(url, {
