@@ -55,10 +55,7 @@ app = FastAPI(
 
 # --- 6. Configuração do CORS ---
 origins = [
-    "http://localhost",
-    "http://localhost:3000",
-    "http://localhost:5173",  # React (Vite) a aceder a localhost
-    "http://127.0.0.1:5173"  # React (Vite) a aceder a 127.0.0.1
+    "*" # Permite TODAS as origens
 ]
 
 app.add_middleware(
