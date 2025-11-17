@@ -5,16 +5,16 @@ from datetime import datetime
 import json
 
 # --- 1. Configurações ---
-API_URL = "http://127.0.0.1:8000" # Usar 127.0.0.1 para consistência
+API_URL = "https://liveops-dashboard-fullstack.onrender.com" 
 BACKEND_URL_TOKEN = f"{API_URL}/auth/token"
 BACKEND_URL_EVENT = f"{API_URL}/api/event"
 
 # --- 2. NOVO: Credenciais de Login ---
-# Use o utilizador e senha que você acabou de registar no site
-SIMULATOR_USER = "admin"
-SIMULATOR_PASS = "1234" # Mude se você usou uma senha diferente
 
-# Listas de dados (sem mudanças)
+SIMULATOR_USER = "admin"
+SIMULATOR_PASS = "1234" 
+
+
 EVENT_TYPES = ["page_view", "add_to_cart", "remove_from_cart", "checkout_start", "payment_error", "purchase_complete", "user_login", "user_logout"]
 PRODUCTS = [
     {"id": "P001", "name": "Smartwatch XYZ", "price": 299.99},
@@ -42,7 +42,7 @@ def get_auth_token():
     }
     
     try:
-        response = requests.post(BACKEND_URL_TOKEN, data=login_data, timeout=5)
+        response = requests.post(BACKEND_URL_TOKEN, data=login_data, timeout=60)
         
         if response.status_code == 200:
             token_data = response.json()
@@ -102,7 +102,7 @@ def run_simulator(token: str):
             event = generate_event()
             try:
                 # --- MUDANÇA: Envia o cabeçalho em cada pedido ---
-                response = requests.post(BACKEND_URL_EVENT, json=event, headers=headers, timeout=1)
+                response = requests.post(BACKEND_URL_EVENT, json=event, headers=headers, timeout=30)
                 
                 if response.status_code == 200:
                     pass
