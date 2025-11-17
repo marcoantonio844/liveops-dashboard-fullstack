@@ -15,9 +15,8 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 
-# --- 2. NOVO: Bibliotecas do Simulador ---
+# --- 2. Bibliotecas do Simulador ---
 import asyncio
-import httpx
 import random
 
 # --- 3. Configuração da "Pequena IA" ---
@@ -51,7 +50,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 app = FastAPI(
     title="LiveOps Dashboard Backend",
     description="Processa, salva, protege e distribui eventos.",
-    version="0.4.0" # Versão Nova
+    version="0.5.1" # Versão Nova (Corrigida)
 )
 
 # --- 7. Configuração do CORS (Pronto para Deploy) ---
@@ -217,22 +216,30 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     return {"access_token": access_token, "token_type": "bearer"}
 
 # --- 14. Endpoint de Eventos (PROTEGIDO) ---
-@app.post("/api/event")
-async def receive_event(event: Event, current_user: User = Depends(get_current_user)):
+async def process_simulated_event(event: Event):
+    """
+    Função interna que processa o evento (sem proteção de token, 
+    pois só é chamada pelo próprio servidor).
+    """
     event_dict = event.model_dump()
     try:
         await events_collection.insert_one(event_dict)
     except Exception as e:
         print(f"Erro ao salvar no MongoDB: {e}")
+
     event_json = event.model_dump_json()
     await manager.broadcast(event_json)
     await check_anomaly(event)
-    return {"status": "ok", "saved": True, "user": current_user.username}
+    return {"status": "ok", "saved": True}
+
+@app.post("/api/event")
+async def receive_event(event: Event, current_user: User = Depends(get_current_user)):
+    # Este endpoint agora é só para "segurança" caso algo externo queira enviar dados
+    return await process_simulated_event(event)
 
 # --- 15. Endpoints de Histórico (BI) (PROTEGIDOS) ---
 @app.get("/api/history/summary-24h")
 async def get_history_summary(current_user: User = Depends(get_current_user)):
-    
     end_time = datetime.utcnow()
     start_time = end_time - timedelta(days=1)
     sales_pipeline = [
@@ -259,7 +266,6 @@ async def get_history_summary(current_user: User = Depends(get_current_user)):
 
 @app.get("/api/history/sales-hourly-24h")
 async def get_sales_hourly_summary(current_user: User = Depends(get_current_user)):
-    
     end_time = datetime.utcnow()
     start_time = end_time - timedelta(days=1)
     hourly_sales_pipeline = [
@@ -283,9 +289,28 @@ async def get_sales_hourly_summary(current_user: User = Depends(get_current_user
         final_sales_data.append({"name": f"{hour_key:02d}:00", "Vendas": sales_value})
     return final_sales_data
 
+@app.get("/api/history/top-products-24h")
+async def get_top_products_summary(current_user: User = Depends(get_current_user)):
+    print("Recebida requisição de top produtos /api/history/top-products-24h")
+    end_time = datetime.utcnow()
+    start_time = end_time - timedelta(days=1)
+    top_products_pipeline = [
+        {"$match": {"timestamp": {"$gte": start_time.isoformat() + "Z", "$lt": end_time.isoformat() + "Z"}, "event_type": "purchase_complete"}},
+        {"$group": {"_id": "$metadata.product_name", "total_quantity": {"$sum": "$metadata.quantity"}}},
+        {"$sort": {"total_quantity": -1}},
+        {"$limit": 5},
+        {"$project": {"_id": 0, "name": "$_id", "value": "$total_quantity"}}
+    ]
+    try:
+        top_products = await events_collection.aggregate(top_products_pipeline).to_list(length=5)
+    except Exception as e:
+        print(f"Erro ao consultar top produtos: {e}")
+        return {"error": "Falha ao consultar o banco de dados"}
+    print(f"Top 5 produtos enviados: {len(top_products)} produtos.")
+    return top_products
+
 @app.get("/api/history/user/{user_id}")
 async def get_user_history(user_id: str, current_user: User = Depends(get_current_user)):
-    # ... (código igual, não precisa mudar) ...
     print(f"Recebida requisição de histórico para o utilizador: {user_id}")
     summary_pipeline = [
         {"$group": {"_id": "$event_type", "count": {"$sum": 1}, "total_value": {"$sum": "$metadata.total_amount"}}}
@@ -317,7 +342,6 @@ async def get_current_user_from_token_query(token: str):
 
 @app.websocket("/ws/live")
 async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
-  
     user = await get_current_user_from_token_query(token)
     if user is None:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
@@ -333,107 +357,76 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
         print(f"Erro no WebSocket: {e}")
         manager.disconnect(websocket)
 
-# --- 17. NOVO: LÓGICA DO SIMULADOR EMBUTIDO ---
+# --- 17. LÓGICA DO SIMULADOR EMBUTIDO (CORRIGIDO) ---
 
-
-RENDER_API_URL = "https://liveops-dashboard-fullstack.onrender.com" 
-# Credenciais para o simulador fazer login
-SIMULATOR_USER = "admin"
-SIMULATOR_PASS = "1234" 
-
-
-EVENT_TYPES = ["page_view", "add_to_cart", "remove_from_cart", "checkout_start", "payment_error", "purchase_complete", "user_login", "user_logout"]
-PRODUCTS = [
+EVENT_TYPES_SIM = ["page_view", "add_to_cart", "remove_from_cart", "checkout_start", "payment_error", "purchase_complete", "user_login", "user_logout"]
+PRODUCTS_SIM = [
     {"id": "P001", "name": "Smartwatch XYZ", "price": 299.99},
     {"id": "P002", "name": "Fone Bluetooth Mega", "price": 149.50},
     {"id": "P003", "name": "Carregador Portátil 10000mAh", "price": 75.00},
     {"id": "P004", "name": "Câmera de Segurança HD", "price": 350.00},
     {"id": "P005", "name": "Mouse Gamer Óptico", "price": 120.00},
+    {"id": "P006", "name": "Teclado Mecânico RGB", "price": 400.00},
+    {"id": "P007", "name": "Monitor Ultrawide 27'", "price": 1200.00},
 ]
-REGIONS = ["São Paulo", "Rio de Janeiro", "Belo Horizonte", "Porto Alegre", "Curitiba", "Salvador", "Fortaleza", "Brasília"]
+REGIONS_SIM = ["São Paulo", "Rio de Janeiro", "Belo Horizonte", "Porto Alegre", "Curitiba", "Salvador", "Fortaleza", "Brasília"]
 
-# Função de Geração de Eventos (copiada do simulador.py)
+# Função de Geração de Eventos (COM A CORREÇÃO)
 def generate_event_simulated():
-    event_type = random.choice(EVENT_TYPES)
+    event_type = random.choice(EVENT_TYPES_SIM)
     user_id = f"user_{random.randint(1000, 9999)}"
     timestamp = datetime.utcnow().isoformat() + "Z"
     event_data = {"user_id": user_id, "timestamp": timestamp, "event_type": event_type, "metadata": {}}
+    
+    product = None # Definir fora para garantir o escopo
+    
     if event_type in ["add_to_cart", "remove_from_cart", "purchase_complete"]:
-        product = random.choice(PRODUCTS)
+        product = random.choice(PRODUCTS_SIM)
         event_data["metadata"]["product_id"] = product["id"]
         event_data["metadata"]["product_name"] = product["name"]
         event_data["metadata"]["price"] = product["price"]
-        event_data["metadata"]["quantity"] = random.randint(1, 3)
+        # --- A CORREÇÃO ESTÁ AQUI ---
+        event_data["metadata"]["quantity"] = random.randint(1, 3) 
+    
     if event_type == "purchase_complete":
+        # Este bloco agora funciona porque 'quantity' existe
         event_data["metadata"]["order_id"] = f"ORD{random.randint(100000, 999999)}"
-        event_data["metadata"]["total_amount"] = round(product["price"] * event_data["metadata"]["quantity"], 2)
-        event_data["metadata"]["region"] = random.choice(REGIONS)
+        event_data["metadata"]["total_amount"] = round(event_data["metadata"]["price"] * event_data["metadata"]["quantity"], 2)
+        event_data["metadata"]["region"] = random.choice(REGIONS_SIM)
     elif event_type == "payment_error":
         event_data["metadata"]["error_code"] = f"ERR{random.randint(100, 999)}"
         event_data["metadata"]["error_message"] = random.choice(["Cartão Recusado", "Transação Não Autorizada", "Limite Excedido"])
-        event_data["metadata"]["region"] = random.choice(REGIONS)
+        event_data["metadata"]["region"] = random.choice(REGIONS_SIM)
     elif event_type == "page_view":
         event_data["metadata"]["page_url"] = random.choice(["/home", "/products", "/cart"])
         event_data["metadata"]["referrer"] = random.choice(["google", "facebook", "direct"])
-    return event_data
+        
+    return Event(**event_data) # Retorna um objeto Pydantic 'Event'
 
-# Função de Login (Assíncrona com httpx)
-async def get_auth_token_async():
-    print(f"A autenticar o simulador interno como '{SIMULATOR_USER}'...")
-    login_data = {'username': SIMULATOR_USER, 'password': SIMULATOR_PASS}
-    
-   
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.post(f"{RENDER_API_URL}/auth/token", data=login_data, timeout=60.0)
-            if response.status_code == 200:
-                print("Simulador interno autenticado com sucesso!")
-                return response.json()['access_token']
-            else:
-                print(f"Erro ao autenticar simulador: {response.status_code} - {response.text}")
-                return None
-        except httpx.RequestError as e:
-            print(f"Erro de conexão do simulador: {e}. O servidor já 'acordou'?")
-            return None
-
-# Loop Principal do Simulador (Assíncrono com httpx)
-async def run_simulator_loop(token: str):
+# Loop Principal do Simulador
+async def run_simulator_loop():
     print("Simulador interno INICIADO. A gerar dados em background...")
-    headers = {"Authorization": f"Bearer {token}"}
-    
-    async with httpx.AsyncClient() as client:
-        while True:
-            try:
-                event = generate_event_simulated()
-                response = await client.post(f"{RENDER_API_URL}/api/event", json=event, headers=headers, timeout=30.0)
-                
-                if response.status_code == 401:
-                    print("Token do simulador expirou. A parar.")
-                    break # Para o loop
-                
-                # Abrandar o simulador
-                await asyncio.sleep(random.uniform(0.5, 1.5))
-                
-            except httpx.RequestError as e:
-                print(f"Erro de rede no simulador interno: {e}")
-                await asyncio.sleep(10) # Espera 10s se houver erro de rede
-            except Exception as e:
-                print(f"Erro inesperado no loop do simulador: {e}")
-                await asyncio.sleep(10)
+    while True:
+        try:
+            event = generate_event_simulated()
+            
+            # Chama a função interna DIRETAMENTE
+            await process_simulated_event(event)
+            
+            # Abrandar o simulador
+            await asyncio.sleep(random.uniform(0.5, 1.5))
+            
+        except Exception as e:
+            print(f"Erro inesperado no loop do simulador: {e}")
+            await asyncio.sleep(10)
 
 # Função de "Arranque" do Simulador
 async def start_simulator_task():
-    print("Servidor arrancou. A aguardar 10s para o servidor estabilizar...")
-    await asyncio.sleep(10) # Dá 10s para o servidor Uvicorn "acordar"
+    print("Servidor arrancou. A aguardar 10s para o MongoDB...")
+    await asyncio.sleep(10) # Dá 10s para a ligação ao DB estabilizar
     
-    token = await get_auth_token_async()
-    if token:
-        # Cria uma "tarefa" (task) que corre em background para sempre
-        # sem bloquear o servidor principal
-        asyncio.create_task(run_simulator_loop(token))
-    else:
-        print("Não foi possível obter token. O simulador interno NÃO VAI ARRANCAR.")
-
+    # Cria uma "tarefa" (task) que corre em background para sempre
+    asyncio.create_task(run_simulator_loop())
 
 # --- 18. Eventos de Inicialização/Desligamento ---
 @app.on_event("startup")
@@ -445,7 +438,7 @@ async def startup_db_client():
         await users_collection.create_index("username", unique=True)
         print("Índice de utilizadores garantido.")
         
-        # --- MUDANÇA: Ligar o simulador em background ---
+        # Ligar o simulador em background
         asyncio.create_task(start_simulator_task())
         
     except Exception as e:
@@ -459,8 +452,4 @@ async def shutdown_db_client():
 # --- 19. Rodar o Servidor (PARA PRODUÇÃO) ---
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False) # reload=False é crucial
-
-
-
-
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
